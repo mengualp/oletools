@@ -4,6 +4,7 @@ from collections import OrderedDict
 
 def checkOrder(input, pattern): 
 #TESTSETSETETETETESETSETETSETSETETET	
+#NETSKSKKSKSsdkjhdkf
 	# create empty OrderedDict 
 	# output will be like {'a': None,'b': None, 'c': None} 
 	dict = OrderedDict.fromkeys(input) 
