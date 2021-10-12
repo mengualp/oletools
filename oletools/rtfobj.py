@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-from __future__ import print_function
-
 """
 rtfobj.py
 
@@ -17,7 +15,7 @@ http://www.decalage.info/python/oletools
 
 #=== LICENSE =================================================================
 
-# rtfobj is copyright (c) 2012-2019, Philippe Lagadec (http://www.decalage.info)
+# rtfobj is copyright (c) 2012-2021, Philippe Lagadec (http://www.decalage.info)
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification,
@@ -90,8 +88,17 @@ http://www.decalage.info/python/oletools
 # 2018-09-11 v0.54 PL: - olefile is now a dependency
 # 2019-07-08 v0.55 MM: - added URL carver for CVE-2017-0199 (Equation Editor) PR #460
 #                      - added SCT to the list of executable file extensions PR #461
+# 2019-12-16 v0.55.2 PL: - \rtf is not a destination control word (issue #522)
+# 2019-12-17         PL: - fixed process_file to detect Equation class (issue #525)
+# 2021-05-06 v0.56.2 DD: - fixed bug when OLE package class name ends with null
+#                          characters (issue #507, PR #648)
+# 2021-05-23 v0.60   PL: - use ftguess to identify file type of OLE Package
+#                        - fixed bug in re_executable_extensions
+# 2021-06-03 v0.60.1 PL: - fixed code to find URLs in OLE2Link objects for Py3 (issue #692)
 
-__version__ = '0.55.dev3'
+from __future__ import print_function
+
+__version__ = '0.60.1.dev1'
 
 # ------------------------------------------------------------------------------
 # TODO:
@@ -123,7 +130,7 @@ if not _parent_dir in sys.path:
 
 from oletools.thirdparty.xglob import xglob
 from oletools.thirdparty.tablestream import tablestream
-from oletools import oleobj
+from oletools import oleobj, ftguess
 import olefile
 from oletools.common import clsid
 
@@ -270,7 +277,7 @@ re_delim_hexblock = re.compile(DELIMITER + PATTERN)
 
 # TODO: use a frozenset instead of a regex?
 re_executable_extensions = re.compile(
-    r"(?i)\.(BAT|CLASS|CMD|CPL|DLL|EXECOM|GADGET|HTA|INF|JAR|JS|JSE|LNK|MSC|MSI|MSP|PIF|PS1|PS1XML|PS2|PS2XML|PSC1|PSC2|REG|SCF|SCR|SCT|VB|VBE|VBS|WS|WSC|WSF|WSH)\b")
+    r"(?i)\.(BAT|CLASS|CMD|CPL|DLL|EXE|COM|GADGET|HTA|INF|JAR|JS|JSE|LNK|MSC|MSI|MSP|PIF|PS1|PS1XML|PS2|PS2XML|PSC1|PSC2|REG|SCF|SCR|SCT|VB|VBE|VBS|WS|WSC|WSF|WSH)\b")
 
 # Destination Control Words, according to MS RTF Specifications v1.9.1:
 DESTINATION_CONTROL_WORDS = frozenset((
@@ -301,7 +308,10 @@ DESTINATION_CONTROL_WORDS = frozenset((
     b"oleclsid", b"operator", b"panose", b"password", b"passwordhash", b"pgp", b"pgptbl", b"picprop", b"pict", b"pn", b"pnseclvl",
     b"pntext", b"pntxta", b"pntxtb", b"printim",
     b"propname", b"protend", b"protstart", b"protusertbl",
-    b"result", b"revtbl", b"revtim", b"rtf", b"rxe", b"shp", b"shpgrp", b"shpinst", b"shppict", b"shprslt", b"shptxt",
+    b"result", b"revtbl", b"revtim",
+    # \rtf should not be treated as a destination (issue #522)
+    #b"rtf",
+    b"rxe", b"shp", b"shpgrp", b"shpinst", b"shppict", b"shprslt", b"shptxt",
     b"sn", b"sp", b"staticval", b"stylesheet", b"subject", b"sv", b"svb", b"tc", b"template", b"themedata", b"title", b"txe", b"ud",
     b"upr", b"userprops", b"wgrffmtfilter", b"windowcaption", b"writereservation", b"writereservhash", b"xe", b"xform",
     b"xmlattrname", b"xmlattrvalue", b"xmlclose", b"xmlname", b"xmlnstbl", b"xmlopen",
@@ -550,7 +560,7 @@ class RtfParser(object):
         # TODO: according to RTF specs v1.9.1, "Destination changes are legal only immediately after an opening brace ({)"
         # (not counting the special control symbol \*, of course)
         if cword in DESTINATION_CONTROL_WORDS:
-            # log.debug('%r is a destination control word: starting a new destination' % cword)
+            log.debug('%r is a destination control word: starting a new destination at index %Xh' % (cword, self.index))
             self._open_destination(matchobject, cword)
         # call the corresponding user method for additional processing:
         self.control_word(matchobject, cword, param)
@@ -636,6 +646,7 @@ class RtfObject(object):
         self.filename = None
         self.src_path = None
         self.temp_path = None
+        self.ftg = None  # ftguess.FileTypeGuesser to identify file type
         # Additional OLE object data
         self.clsid = None
         self.clsid_desc = None
@@ -692,20 +703,22 @@ class RtfObjParser(RtfParser):
                 rtfobj.oledata = obj.data
                 rtfobj.oledata_md5 = hashlib.md5(obj.data).hexdigest()         
                 rtfobj.is_ole = True
-                if obj.class_name.lower() == b'package':
+                if obj.class_name.lower().rstrip(b'\0') == b'package':
                     opkg = oleobj.OleNativeStream(bindata=obj.data,
                                                   package=True)
                     rtfobj.filename = opkg.filename
                     rtfobj.src_path = opkg.src_path
                     rtfobj.temp_path = opkg.temp_path
                     rtfobj.olepkgdata = opkg.data
-                    rtfobj.olepkgdata_md5 = hashlib.md5(opkg.data).hexdigest()     
+                    rtfobj.olepkgdata_md5 = hashlib.md5(opkg.data).hexdigest()
+                    # use ftguess to identify file type from content:
+                    rtfobj.ftg = ftguess.FileTypeGuesser(data=rtfobj.olepkgdata)
                     rtfobj.is_package = True
                 else:
                     if olefile.isOleFile(obj.data):
                         ole = olefile.OleFileIO(obj.data)
                         rtfobj.clsid = ole.root.clsid
-                        rtfobj.clsid_desc = clsid.KNOWN_CLSIDS.get(rtfobj.clsid,
+                        rtfobj.clsid_desc = clsid.KNOWN_CLSIDS.get(rtfobj.clsid.upper(),
                             'unknown CLSID (please report at https://github.com/decalage2/oletools/issues)')
             except:
                 pass
@@ -898,6 +911,7 @@ def process_file(container, filename, data, output_dir=None, save_object=False):
                 if re_executable_extensions.match(temp_ext) or re_executable_extensions.match(file_ext):
                     ole_color = 'red'
                     ole_column += '\nEXECUTABLE FILE'
+                ole_column += '\nFile Type: {}'.format(rtfobj.ftg.ftype.name)
             else:
                 ole_column += '\nMD5 = %r' % rtfobj.oledata_md5
             if rtfobj.clsid is not None:
@@ -911,24 +925,22 @@ def process_file(container, filename, data, output_dir=None, save_object=False):
                 ole_color = 'red'
                 ole_column += '\nPossibly an exploit for the OLE2Link vulnerability (VU#921560, CVE-2017-0199)\n'
                 # https://bitbucket.org/snippets/Alexander_Hanel/7Adpp
-                found_list =  re.findall(r'[a-fA-F0-9\x0D\x0A]{128,}',data)
                 urls = []
-                for item in found_list:
-                    try:
-                        temp = item.replace("\x0D\x0A","").decode("hex")
-                    except:
-                        continue
-                    pat = re.compile(r'(?:[\x20-\x7E][\x00]){3,}')
-                    words = [w.decode('utf-16le') for w in pat.findall(temp)]
-                    for w in words:
-                        if "http" in w:
-                            urls.append(w)
+                # We look for unicode strings of 3+ chars in the OLE object data:
+                # Here the regex must be a bytes string (issue #692)
+                # but Python 2.7 does not support rb'...' so we use b'...' and escape backslashes
+                pat = re.compile(b'(?:[\\x20-\\x7E][\\x00]){3,}')
+                words = [w.decode('utf-16le') for w in pat.findall(rtfobj.oledata)]
+                for w in words:
+                    # TODO: we could use the URL_RE regex from olevba to be more precise
+                    if "http" in w:
+                        urls.append(w)
                 urls = sorted(set(urls))
                 if urls:
                     ole_column += 'URL extracted: ' + ', '.join(urls)
             # Detect Equation Editor exploit
             # https://www.kb.cert.org/vuls/id/421280/
-            elif rtfobj.class_name.lower() == b'equation.3':
+            elif rtfobj.class_name.lower().startswith(b'equation.3'):
                 ole_color = 'red'
                 ole_column += '\nPossibly an exploit for the Equation Editor vulnerability (VU#421280, CVE-2017-11882)'
         else:

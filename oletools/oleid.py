@@ -17,7 +17,7 @@ http://www.decalage.info/python/oletools
 
 #=== LICENSE =================================================================
 
-# oleid is copyright (c) 2012-2019, Philippe Lagadec (http://www.decalage.info)
+# oleid is copyright (c) 2012-2021, Philippe Lagadec (http://www.decalage.info)
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -58,8 +58,9 @@ from __future__ import print_function
 # 2018-09-11 v0.54 PL: - olefile is now a dependency
 # 2018-10-19       CH: - accept olefile as well as filename, return Indicators,
 #                        improve encryption detection for ppt
+# 2021-05-07 v0.56.2 MN: - fixed bug in check_excel (issue #584, PR #585)
 
-__version__ = '0.54'
+__version__ = '0.60.1.dev2'
 
 
 #------------------------------------------------------------------------------
@@ -80,8 +81,7 @@ __version__ = '0.54'
 
 #=== IMPORTS =================================================================
 
-import argparse, sys, re, zlib, struct, os
-from os.path import dirname, abspath
+import argparse, sys, re, zlib, struct, os, io
 
 import olefile
 
@@ -97,10 +97,38 @@ _parent_dir = os.path.normpath(os.path.join(_thismodule_dir, '..'))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-from oletools.thirdparty.prettytable import prettytable
-from oletools import crypto
+from oletools.thirdparty.tablestream import tablestream
+from oletools import crypto, ftguess, olevba, mraptor, oleobj, ooxml
+from oletools.common.log_helper import log_helper
+from oletools.common.codepages import get_codepage_name
 
+# === LOGGING =================================================================
 
+log = log_helper.get_or_create_silent_logger('oleid')
+
+# === CONSTANTS ===============================================================
+
+class RISK(object):
+    """
+    Constants for risk levels
+    """
+    HIGH = 'HIGH'
+    MEDIUM = 'Medium'
+    LOW = 'low'
+    NONE = 'none'
+    INFO = 'info'
+    UNKNOWN = 'Unknown'
+    ERROR = 'Error'  # if a check triggered an unexpected error
+
+risk_color = {
+    RISK.HIGH: 'red',
+    RISK.MEDIUM: 'yellow',
+    RISK.LOW: 'white',
+    RISK.NONE: 'green',
+    RISK.INFO: 'cyan',
+    RISK.UNKNOWN: None,
+    RISK.ERROR: None
+}
 
 #=== FUNCTIONS ===============================================================
 
@@ -165,7 +193,7 @@ class Indicator(object):
     """
 
     def __init__(self, _id, value=None, _type=bool, name=None,
-                 description=None):
+                 description=None, risk=RISK.UNKNOWN, hide_if_false=True):
         self.id = _id
         self.value = value
         self.type = _type
@@ -173,17 +201,19 @@ class Indicator(object):
         if name == None:
             self.name = _id
         self.description = description
+        self.risk = risk
+        self.hide_if_false = hide_if_false
 
 
 class OleID(object):
     """
-    Summary of information about an OLE file
+    Summary of information about an OLE file (and a few other MS Office formats)
 
     Call :py:meth:`OleID.check` to gather all info on a given file or run one
     of the `check_` functions to just get a specific piece of info.
     """
 
-    def __init__(self, input_file):
+    def __init__(self, filename=None, data=None):
         """
         Create an OleID object
 
@@ -198,67 +228,24 @@ class OleID(object):
         If filename is given, only :py:meth:`OleID.check` opens the file. Other
         functions will return None
         """
-        if isinstance(input_file, olefile.OleFileIO):
-            self.ole = input_file
+        if filename is None and data is None:
+            raise ValueError('OleID requires either a file path or file data, or both')
+        self.file_on_disk = False  # True = file on disk / False = file in memory
+        if data is None:
+            self.file_on_disk = True  # useful for some check that don't work in memory
+            with open(filename, 'rb') as f:
+                self.data = f.read()
+        else:
+            self.data = data
+        self.data_bytesio = io.BytesIO(self.data)
+        if isinstance(filename, olefile.OleFileIO):
+            self.ole = filename
             self.filename = None
         else:
-            self.filename = input_file
+            self.filename = filename
             self.ole = None
         self.indicators = []
         self.suminfo_data = None
-
-    def check(self):
-        """
-        Open file and run all checks on it.
-
-        :returns: list of all :py:class:`Indicator`s created
-        """
-        # check if it is actually an OLE file:
-        oleformat = Indicator('ole_format', True, name='OLE format')
-        self.indicators.append(oleformat)
-        if self.ole:
-            oleformat.value = True
-        elif not olefile.isOleFile(self.filename):
-            oleformat.value = False
-            return self.indicators
-        else:
-            # parse file:
-            self.ole = olefile.OleFileIO(self.filename)
-        # checks:
-        self.check_properties()
-        self.check_encrypted()
-        self.check_word()
-        self.check_excel()
-        self.check_powerpoint()
-        self.check_visio()
-        self.check_object_pool()
-        self.check_flash()
-        self.ole.close()
-        return self.indicators
-
-    def check_properties(self):
-        """
-        Read summary information required for other check_* functions
-
-        :returns: 2 :py:class:`Indicator`s (for presence of summary info and
-                    application name) or None if file was not opened
-        """
-        suminfo = Indicator('has_suminfo', False,
-                            name='Has SummaryInformation stream')
-        self.indicators.append(suminfo)
-        appname = Indicator('appname', 'unknown', _type=str,
-                            name='Application name')
-        self.indicators.append(appname)
-        if not self.ole:
-            return None, None
-        self.suminfo_data = {}
-        # check stream SummaryInformation (not present e.g. in encrypted ppt)
-        if self.ole.exists("\x05SummaryInformation"):
-            suminfo.value = True
-            self.suminfo_data = self.ole.getproperties("\x05SummaryInformation")
-            # check application name:
-            appname.value = self.suminfo_data.get(0x12, 'unknown')
-        return suminfo, appname
 
     def get_indicator(self, indicator_id):
         """Helper function: returns an indicator if present (or None)"""
@@ -269,115 +256,136 @@ class OleID(object):
         else:
             return None
 
+    def check(self):
+        """
+        Open file and run all checks on it.
+
+        :returns: list of all :py:class:`Indicator`s created
+        """
+        self.ftg = ftguess.FileTypeGuesser(filepath=self.filename, data=self.data)
+        ftype = self.ftg.ftype
+        # if it's an unrecognized OLE file, display the root CLSID in description:
+        if self.ftg.filetype == ftguess.FTYPE.GENERIC_OLE:
+            description = 'Unrecognized OLE file. Root CLSID: {} - {}'.format(
+                self.ftg.root_clsid, self.ftg.root_clsid_name)
+        else:
+            description = ''
+        ft = Indicator('ftype', value=ftype.longname, _type=str, name='File format', risk=RISK.INFO,
+                       description=description)
+        self.indicators.append(ft)
+        ct = Indicator('container', value=ftype.container, _type=str, name='Container format', risk=RISK.INFO,
+                       description='Container type')
+        self.indicators.append(ct)
+
+        # check if it is actually an OLE file:
+        if self.ftg.container == ftguess.CONTAINER.OLE:
+            # reuse olefile already opened by ftguess
+            self.ole = self.ftg.olefile
+        # oleformat = Indicator('ole_format', True, name='OLE format')
+        # self.indicators.append(oleformat)
+        # if self.ole:
+        #     oleformat.value = True
+        # elif not olefile.isOleFile(self.filename):
+        #     oleformat.value = False
+        #     return self.indicators
+        # else:
+        #     # parse file:
+        #     self.ole = olefile.OleFileIO(self.filename)
+
+        # checks:
+        # TODO: add try/except around each check
+        self.check_properties()
+        self.check_encrypted()
+        self.check_macros()
+        self.check_external_relationships()
+        self.check_object_pool()
+        self.check_flash()
+        if self.ole is not None:
+            self.ole.close()
+        return self.indicators
+
+    def check_properties(self):
+        """
+        Read summary information required for other check_* functions
+
+        :returns: 2 :py:class:`Indicator`s (for presence of summary info and
+                    application name) or None if file was not opened
+        """
+        if not self.ole:
+            return None
+        meta = self.ole.get_metadata()
+        appname = Indicator('appname', meta.creating_application, _type=str,
+                            name='Application name', description='Application name declared in properties',
+                            risk=RISK.INFO)
+        self.indicators.append(appname)
+        codepage_name = None
+        if meta.codepage is not None:
+            codepage_name = '{}: {}'.format(meta.codepage, get_codepage_name(meta.codepage))
+        codepage = Indicator('codepage', codepage_name, _type=str,
+                      name='Properties code page', description='Code page used for properties',
+                      risk=RISK.INFO)
+        self.indicators.append(codepage)
+        author = Indicator('author', meta.author, _type=str,
+                      name='Author', description='Author declared in properties',
+                      risk=RISK.INFO)
+        self.indicators.append(author)
+        return appname, codepage, author
+
     def check_encrypted(self):
         """
         Check whether this file is encrypted.
-
-        Might call check_properties.
 
         :returns: :py:class:`Indicator` for encryption or None if file was not
                   opened
         """
         # we keep the pointer to the indicator, can be modified by other checks:
-        encrypted = Indicator('encrypted', False, name='Encrypted')
+        encrypted = Indicator('encrypted', False, name='Encrypted',
+                              risk=RISK.NONE,
+                              description='The file is not encrypted',
+                              hide_if_false=False)
         self.indicators.append(encrypted)
+        # Only OLE files can be encrypted (OpenXML files are encrypted in an OLE container):
         if not self.ole:
             return None
-        encrypted.value = crypto.is_encrypted(self.ole)
+        try:
+            if crypto.is_encrypted(self.ole):
+                encrypted.value = True
+                encrypted.risk = RISK.LOW
+                encrypted.description = 'The file is encrypted. It may be decrypted with msoffcrypto-tool'
+        except Exception as exception:
+            # msoffcrypto-tool can trigger exceptions, such as "Unknown file format" for Excel 5.0/95
+            encrypted.value = 'Error'
+            encrypted.risk = RISK.ERROR
+            encrypted.description = 'msoffcrypto-tool raised an error when checking if the file is encrypted: {}'.format(exception)
         return encrypted
 
-    def check_word(self):
+    def check_external_relationships(self):
         """
-        Check whether this file is a word document
+        Check whether this file has external relationships (remote template, OLE object, etc).
 
-        If this finds evidence of encryption, will correct/add encryption
-        indicator.
-
-        :returns: 2 :py:class:`Indicator`s (for word and vba_macro) or None if
-                  file was not opened
+        :returns: :py:class:`Indicator`
         """
-        word = Indicator(
-            'word', False, name='Word Document',
-            description='Contains a WordDocument stream, very likely to be a '
-                        'Microsoft Word Document.')
-        self.indicators.append(word)
-        macros = Indicator('vba_macros', False, name='VBA Macros')
-        self.indicators.append(macros)
-        if not self.ole:
-            return None, None
-        if self.ole.exists('WordDocument'):
-            word.value = True
-
-            # check for VBA macros:
-            if self.ole.exists('Macros'):
-                macros.value = True
-        return word, macros
-
-    def check_excel(self):
-        """
-        Check whether this file is an excel workbook.
-
-        If this finds macros, will add/correct macro indicator.
-
-        see also: :py:func:`xls_parser.is_xls`
-
-        :returns: :py:class:`Indicator` for excel or (None, None) if file was
-                  not opened
-        """
-        excel = Indicator(
-            'excel', False, name='Excel Workbook',
-            description='Contains a Workbook or Book stream, very likely to be '
-                        'a Microsoft Excel Workbook.')
-        self.indicators.append(excel)
-        if not self.ole:
-            return None
-        #self.macros = Indicator('vba_macros', False, name='VBA Macros')
-        #self.indicators.append(self.macros)
-        if self.ole.exists('Workbook') or self.ole.exists('Book'):
-            excel.value = True
-            # check for VBA macros:
-            if self.ole.exists('_VBA_PROJECT_CUR'):
-                # correct macro indicator if present or add one
-                macro_ind = self.get_indicator('vba_macros')
-                if macro_ind:
-                    macro_ind.value = True
-                else:
-                    self.indicators.append('vba_macros', True,
-                                           name='VBA Macros')
-        return excel
-
-    def check_powerpoint(self):
-        """
-        Check whether this file is a powerpoint presentation
-
-        see also: :py:func:`ppt_record_parser.is_ppt`
-
-        :returns: :py:class:`Indicator` for whether this is a powerpoint
-                  presentation or not or None if file was not opened
-        """
-        ppt = Indicator(
-            'ppt', False, name='PowerPoint Presentation',
-            description='Contains a PowerPoint Document stream, very likely to '
-                        'be a Microsoft PowerPoint Presentation.')
-        self.indicators.append(ppt)
-        if not self.ole:
-            return None
-        if self.ole.exists('PowerPoint Document'):
-            ppt.value = True
-        return ppt
-
-    def check_visio(self):
-        """Check whether this file is a visio drawing"""
-        visio = Indicator(
-            'visio', False, name='Visio Drawing',
-            description='Contains a VisioDocument stream, very likely to be a '
-                        'Microsoft Visio Drawing.')
-        self.indicators.append(visio)
-        if not self.ole:
-            return None
-        if self.ole.exists('VisioDocument'):
-            visio.value = True
-        return visio
+        ext_rels = Indicator('ext_rels', 0, name='External Relationships', _type=int,
+                              risk=RISK.NONE,
+                              description='External relationships such as remote templates, remote OLE objects, etc',
+                              hide_if_false=False)
+        self.indicators.append(ext_rels)
+        # this check only works for OpenXML files
+        if not self.ftg.is_openxml():
+            return ext_rels
+        # to collect relationship types:
+        rel_types = set()
+        # open an XmlParser, using a BytesIO instead of filename (to work in memory)
+        xmlparser = ooxml.XmlParser(self.data_bytesio)
+        for rel_type, target in oleobj.find_external_relationships(xmlparser):
+            log.debug('External relationship: type={} target={}'.format(rel_type, target))
+            rel_types.add(rel_type)
+            ext_rels.value += 1
+        if ext_rels.value > 0:
+            ext_rels.description = 'External relationships found: {} - use oleobj for details'.format(
+                ', '.join(rel_types))
+            ext_rels.risk = RISK.HIGH
+        return ext_rels
 
     def check_object_pool(self):
         """
@@ -388,16 +396,81 @@ class OleID(object):
         :returns: :py:class:`Indicator` for ObjectPool stream or None if file
                   was not opened
         """
+        # TODO: replace this by a call to oleobj + add support for OpenXML
         objpool = Indicator(
             'ObjectPool', False, name='ObjectPool',
             description='Contains an ObjectPool stream, very likely to contain '
-                        'embedded OLE objects or files.')
+                        'embedded OLE objects or files. Use oleobj to check it.',
+            risk=RISK.NONE)
         self.indicators.append(objpool)
         if not self.ole:
             return None
         if self.ole.exists('ObjectPool'):
             objpool.value = True
+            objpool.risk = RISK.LOW
+            # TODO: set risk to medium for OLE package if not executable
+            # TODO: set risk to high for Package executable or object with CVE in CLSID
         return objpool
+
+    def check_macros(self):
+        """
+        Check whether this file contains macros (VBA and XLM/Excel 4).
+
+        :returns: :py:class:`Indicator`
+        """
+        vba_indicator = Indicator(_id='vba', value='No', _type=str, name='VBA Macros',
+                                  description='This file does not contain VBA macros.',
+                                  risk=RISK.NONE, hide_if_false=False)
+        self.indicators.append(vba_indicator)
+        xlm_indicator = Indicator(_id='xlm', value='No', _type=str, name='XLM Macros',
+                                  description='This file does not contain Excel 4/XLM macros.',
+                                  risk=RISK.NONE, hide_if_false=False)
+        self.indicators.append(xlm_indicator)
+        if self.ftg.filetype == ftguess.FTYPE.RTF:
+            # For RTF we don't call olevba otherwise it triggers an error
+            vba_indicator.description = 'RTF files cannot contain VBA macros'
+            xlm_indicator.description = 'RTF files cannot contain XLM macros'
+            return vba_indicator, xlm_indicator
+        vba_parser = None  # flag in case olevba fails
+        try:
+            vba_parser = olevba.VBA_Parser(filename=self.filename, data=self.data)
+            if vba_parser.detect_vba_macros():
+                vba_indicator.value = 'Yes'
+                vba_indicator.risk = RISK.MEDIUM
+                vba_indicator.description = 'This file contains VBA macros. No suspicious keyword was found. Use olevba and mraptor for more info.'
+                # check code with mraptor
+                vba_code = vba_parser.get_vba_code_all_modules()
+                m = mraptor.MacroRaptor(vba_code)
+                m.scan()
+                if m.suspicious:
+                    vba_indicator.value = 'Yes, suspicious'
+                    vba_indicator.risk = RISK.HIGH
+                    vba_indicator.description = 'This file contains VBA macros. Suspicious keywords were found. Use olevba and mraptor for more info.'
+        except Exception as e:
+            vba_indicator.risk = RISK.ERROR
+            vba_indicator.value = 'Error'
+            vba_indicator.description = 'Error while checking VBA macros: %s' % str(e)
+        # Check XLM macros only for Excel file types:
+        if self.ftg.is_excel():
+            # TODO: for now XLM detection only works for files on disk... So we need to reload VBA_Parser from the filename
+            #       To be improved once XLMMacroDeobfuscator can work on files in memory
+            if self.file_on_disk:
+                try:
+                    vba_parser = olevba.VBA_Parser(filename=self.filename)
+                    if vba_parser.detect_xlm_macros():
+                        xlm_indicator.value = 'Yes'
+                        xlm_indicator.risk = RISK.MEDIUM
+                        xlm_indicator.description = 'This file contains XLM macros. Use olevba to analyse them.'
+                except Exception as e:
+                    xlm_indicator.risk = RISK.ERROR
+                    xlm_indicator.value = 'Error'
+                    xlm_indicator.description = 'Error while checking XLM macros: %s' % str(e)
+            else:
+                xlm_indicator.risk = RISK.UNKNOWN
+                xlm_indicator.value = 'Unknown'
+                xlm_indicator.description = 'For now, XLM macros can only be detected for files on disk, not in memory'
+
+        return vba_indicator, xlm_indicator
 
     def check_flash(self):
         """
@@ -406,11 +479,13 @@ class OleID(object):
         :returns: :py:class:`Indicator` for count of flash objects or None if
                   file was not opened
         """
+        # TODO: add support for RTF and OpenXML formats
         flash = Indicator(
             'flash', 0, _type=int, name='Flash objects',
             description='Number of embedded Flash objects (SWF files) detected '
                         'in OLE streams. Not 100% accurate, there may be false '
-                        'positives.')
+                        'positives.',
+            risk=RISK.NONE)
         self.indicators.append(flash)
         if not self.ole:
             return None
@@ -420,6 +495,8 @@ class OleID(object):
             # just add to the count of Flash objects:
             flash.value += len(found)
             #print stream, found
+        if flash.value > 0:
+            flash.risk = RISK.MEDIUM
         return flash
 
 
@@ -448,24 +525,23 @@ def main():
         parser.print_help()
         return
 
+    log_helper.enable_logging()
+
     for filename in args.input:
         print('Filename:', filename)
         oleid = OleID(filename)
         indicators = oleid.check()
 
-        #TODO: add description
-        #TODO: highlight suspicious indicators
-        table = prettytable.PrettyTable(['Indicator', 'Value'])
-        table.align = 'l'
-        table.max_width = 39
-        table.border = False
-
+        table = tablestream.TableStream([20, 20, 10, 26],
+                                        header_row=['Indicator', 'Value', 'Risk', 'Description'],
+                                        style=tablestream.TableStyleSlimSep)
         for indicator in indicators:
-            #print '%s: %s' % (indicator.name, indicator.value)
-            table.add_row((indicator.name, indicator.value))
-
-        print(table)
-        print('')
+            if not (indicator.hide_if_false and not indicator.value):
+                #print '%s: %s' % (indicator.name, indicator.value)
+                color = risk_color.get(indicator.risk, None)
+                table.write_row((indicator.name, indicator.value, indicator.risk, indicator.description),
+                                colors=(color, color, color, None))
+        table.close()
 
 if __name__ == '__main__':
     main()

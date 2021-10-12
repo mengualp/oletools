@@ -23,7 +23,7 @@ http://www.decalage.info/python/oletools
 
 # === LICENSE ==================================================================
 
-# MacroRaptor is copyright (c) 2016-2019 Philippe Lagadec (http://www.decalage.info)
+# MacroRaptor is copyright (c) 2016-2021 Philippe Lagadec (http://www.decalage.info)
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification,
@@ -59,8 +59,11 @@ http://www.decalage.info/python/oletools
 # 2017-03-08       PL: - fixed absolute imports
 # 2018-05-25 v0.53 PL: - added Word/PowerPoint 2007+ XML (aka Flat OPC) issue #283
 # 2019-04-04 v0.54 PL: - added ExecuteExcel4Macro, ShellExecuteA, XLM keywords
+# 2019-11-06 v0.55 PL: - added SetTimer
+# 2020-04-20 v0.56 PL: - added keywords RUN and CALL for XLM macros (issue #562)
+# 2021-04-14       PL: - added Workbook_BeforeClose (issue #518)
 
-__version__ = '0.54'
+__version__ = '0.56.2'
 
 #------------------------------------------------------------------------------
 # TODO:
@@ -114,13 +117,13 @@ MSG_ISSUES = 'Please report this issue on %s' % URL_ISSUES
 # TODO: check if line also contains Sub or Function
 re_autoexec = re.compile(r'(?i)\b(?:Auto(?:Exec|_?Open|_?Close|Exit|New)' +
                          r'|Document(?:_?Open|_Close|_?BeforeClose|Change|_New)' +
-                         r'|NewDocument|Workbook(?:_Open|_Activate|_Close)' +
+                         r'|NewDocument|Workbook(?:_Open|_Activate|_Close|_BeforeClose)' +
                          r'|\w+_(?:Painted|Painting|GotFocus|LostFocus|MouseHover' +
                          r'|Layout|Click|Change|Resize|BeforeNavigate2|BeforeScriptExecute' +
                          r'|DocumentComplete|DownloadBegin|DownloadComplete|FileDownload' +
                          r'|NavigateComplete2|NavigateError|ProgressChange|PropertyChange' +
                          r'|SetSecureLockIcon|StatusTextChange|TitleChange|MouseMove' +
-                         r'|MouseEnter|MouseLeave))|Auto_Ope\b')
+                         r'|MouseEnter|MouseLeave|OnConnecting))|Auto_Ope\b')
 # TODO: "Auto_Ope" is temporarily here because of a bug in plugin_biff, which misses the last byte in "Auto_Open"...
 
 # MS-VBAL 5.4.5.1 Open Statement:
@@ -133,8 +136,8 @@ re_write = re.compile(r'(?i)\b(?:FileCopy|CopyFile|Kill|CreateTextFile|'
 # MS-VBAL 5.2.3.5 External Procedure Declaration
 RE_DECLARE_LIB = r'(?:\bDeclare\b[^\n]+\bLib\b)'
 
-re_execute = re.compile(r'(?i)\b(?:Shell|CreateObject|GetObject|SendKeys|'
-    + r'MacScript|FollowHyperlink|CreateThread|ShellExecuteA?|ExecuteExcel4Macro|EXEC|REGISTER)\b|' + RE_DECLARE_LIB)
+re_execute = re.compile(r'(?i)\b(?:Shell|CreateObject|GetObject|SendKeys|RUN|CALL|'
+    + r'MacScript|FollowHyperlink|CreateThread|ShellExecuteA?|ExecuteExcel4Macro|EXEC|REGISTER|SetTimer)\b|' + RE_DECLARE_LIB)
 
 
 # === CLASSES =================================================================
@@ -316,8 +319,7 @@ def main():
             if vba_parser.detect_vba_macros():
                 vba_code_all_modules = ''
                 try:
-                    for (subfilename, stream_path, vba_filename, vba_code) in vba_parser.extract_all_macros():
-                        vba_code_all_modules += vba_code + '\n'
+                    vba_code_all_modules = vba_parser.get_vba_code_all_modules()
                 except Exception as e:
                     # log.error('Error when parsing VBA macros from file %r' % full_name)
                     result = Result_Error

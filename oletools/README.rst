@@ -29,66 +29,103 @@ Software.
 News
 ----
 
--  **2019-05-22 v0.54.2**:
+-  **2021-05-07 v0.56.2**:
 
-   -  bugfix release: fixed several issues related to encrypted
-      documents and XLM/XLF Excel 4 macros
-   -  msoffcrypto-tool is now installed by default to handle encrypted
-      documents
-   -  olevba and msodde now handle documents encrypted with common
-      passwords such as 123, 1234, 4321, 12345, 123456, VelvetSweatShop
-      automatically.
+   -  olevba:
 
--  **2019-04-04 v0.54**:
+      -  updated plugin_biff to v0.0.22 to fix a bug (issues #647, #674)
 
-   -  olevba, msodde: added support for encrypted MS Office files
-   -  olevba: added detection and extraction of XLM/XLF Excel 4 macros
-      (thanks to plugin_biff from Didier Stevens' oledump)
-   -  olevba, mraptor: added detection of VBA running Excel 4 macros
-   -  olevba: detect and display special characters such as backspace
-   -  olevba: colorized output showing suspicious keywords in the VBA
-      code
-   -  olevba, mraptor: full Python 3 compatibility, no separate
-      olevba3/mraptor3 anymore
-   -  olevba: improved handling of code pages and unicode
-   -  olevba: fixed a false-positive in VBA macro detection
-   -  rtfobj: improved OLE Package handling, improved Equation object
-      detection
-   -  oleobj: added detection of external links to objects in OpenXML
-   -  replaced third party packages by PyPI dependencies
+   -  olevba, mraptor:
 
--  2018-05-30 v0.53:
+      -  added detection of Workbook_BeforeClose (issue #518)
 
-   -  olevba and mraptor can now parse Word/PowerPoint 2007+ pure XML
-      files (aka Flat OPC format)
-   -  improved support for VBA forms in olevba (oleform)
-   -  rtfobj now displays the CLSID of OLE objects, which is the best
-      way to identify them. Known-bad CLSIDs such as MS Equation Editor
-      are highlighted in red.
-   -  Updated rtfobj to handle obfuscated RTF samples.
-   -  rtfobj now handles the "\'" obfuscation trick seen in recent
-      samples such as
-      https://twitter.com/buffaloverflow/status/989798880295444480, by
-      emulating the MS Word bug described in
-      https://securelist.com/disappearing-bytes/84017/
-   -  msodde: improved detection of DDE formulas in CSV files
-   -  oledir now displays the tree of storage/streams, along with CLSIDs
-      and their meaning.
-   -  common.clsid contains the list of known CLSIDs, and their links to
-      CVE vulnerabilities when relevant.
-   -  oleid now detects encrypted OpenXML files
-   -  fixed bugs in oleobj, rtfobj, oleid, olevba
+   -  rtfobj:
 
--  2018-02-18 v0.52:
+      -  fixed bug when OLE package class name ends with null characters
+         (issue #507, PR #648)
 
-   -  New tool
-      `msodde <https://github.com/decalage2/oletools/wiki/msodde>`__ to
-      detect and extract DDE links from MS Office files, RTF and CSV;
-   -  Fixed bugs in olevba, rtfobj and olefile, to better handle
-      malformed/obfuscated files;
-   -  Performance improvements in olevba and rtfobj;
-   -  VBA form parsing in olevba;
-   -  Office 2007+ support in oleobj.
+   -  oleid:
+
+      -  fixed bug in check_excel (issue #584, PR #585)
+
+   -  clsid:
+
+      -  added several CLSIDs related to MS Office click-to-run issue
+         CVE-2021-27058
+      -  added checks to ensure that all CLSIDs are uppercase (PR #678)
+
+-  **2021-04-02 v0.56.1**:
+
+   -  olevba:
+
+      -  fixed bug when parsing some malformed files (issue #629)
+
+   -  oleobj:
+
+      -  fixed bug preventing detection of links 'externalReference',
+         'frame', 'hyperlink' (issue #641, PR #670)
+
+   -  setup:
+
+      -  avoid installing msoffcrypto-tool when platform is PyPy+Windows
+         (issue #473)
+      -  PyPI version is now a wheel package to improve installation and
+         avoid antivirus false positives due to test files (issues #215,
+         #398)
+
+-  **2020-09-28 v0.56**:
+
+   -  olevba/mraptor:
+
+      -  added detection of trigger \_OnConnecting
+
+   -  olevba:
+
+      -  updated plugin_biff to v0.0.17 to improve Excel 4/XLM macros
+         parsing
+      -  added simple analysis of Excel 4/XLM macros in XLSM files (PR
+         #569)
+      -  added detection of template injection (PR #569)
+      -  added detection of many suspicious keywords (PR #591 and #569,
+         see https://www.certego.net/en/news/advanced-vba-macros/)
+      -  improved MHT detection (PR #532)
+      -  added --no-xlm option to disable Excel 4/XLM macros parsing (PR
+         #532)
+      -  fixed bug when decompressing raw chunks in VBA (issue #575)
+      -  fixed bug with email package due to monkeypatch for MHT parsing
+         (issue #602, PR #604)
+      -  fixed option --relaxed (issue #596, PR #595)
+      -  enabled relaxed mode by default (issues #477, #593)
+      -  fixed detect_vba_macros to always return VBA code as unicode on
+         Python 3 (issues #455, #477, #587, #593)
+      -  replaced option --pcode by --show-pcode and --no-pcode,
+         replaced optparse by argparse (PR #479)
+
+   -  oleform: improved form parsing (PR #532)
+   -  oleobj: "Ole10Native" is now case insensitive (issue #541)
+   -  clsid: added PDF (issue #552), Microsoft Word Picture (issue #571)
+   -  ppt_parser: fixed bug on Python 3 (issues #177, #607, PR #450)
+
+-  **2019-12-03 v0.55**:
+
+   -  olevba:
+
+      -  added support for SLK files and XLM macro extraction from SLK
+      -  VBA Stomping detection
+      -  integrated pcodedmp to extract and disassemble P-code
+      -  detection of suspicious keywords and IOCs in P-code
+      -  new option --pcode to display P-code disassembly
+      -  improved detection of auto execution triggers
+
+   -  rtfobj: added URL carver for CVE-2017-0199
+   -  better handling of unicode for systems with locale that does not
+      support UTF-8, e.g. LANG=C (PR #365)
+   -  tests:
+
+      -  test files can now be encrypted, to avoid antivirus alerts (PR
+         #217, issue #215)
+      -  tests that trigger antivirus alerts have been temporarily
+         disabled (issue #215)
 
 See the `full
 changelog <https://github.com/decalage2/oletools/wiki/Changelog>`__ for
@@ -141,29 +178,45 @@ Projects using oletools:
 ------------------------
 
 oletools are used by a number of projects and online malware analysis
-services, including `Viper <http://viper.li/>`__,
-`REMnux <https://remnux.org/>`__,
-`FLARE-VM <https://github.com/fireeye/flare-vm>`__,
-`FAME <https://certsocietegenerale.github.io/fame/>`__,
-`Hybrid-analysis.com <https://www.hybrid-analysis.com/>`__, `Joe
-Sandbox <https://www.document-analyzer.net/>`__,
-`Deepviz <https://sandbox.deepviz.com/>`__, `Laika
-BOSS <https://github.com/lmco/laikaboss>`__, `Cuckoo
-Sandbox <https://github.com/cuckoosandbox/cuckoo>`__,
+services, including `ACE <https://github.com/IntegralDefense/ACE>`__,
 `Anlyz.io <https://sandbox.anlyz.io/>`__,
-`ViperMonkey <https://github.com/decalage2/ViperMonkey>`__,
-`pcodedmp <https://github.com/bontchev/pcodedmp>`__,
-`dridex.malwareconfig.com <https://dridex.malwareconfig.com>`__,
-`Snake <https://github.com/countercept/snake>`__,
-`DARKSURGEON <https://github.com/cryps1s/DARKSURGEON>`__,
-`CAPE <https://github.com/ctxis/CAPE>`__,
 `AssemblyLine <https://www.cse-cst.gc.ca/en/assemblyline>`__,
-`malshare.io <https://malshare.io>`__, `Malware Repository Framework
-(MRF) <https://www.adlice.com/download/mrf/>`__,
-`malware-repo <https://github.com/Tigzy/malware-repo>`__,
-`Vba2Graph <https://github.com/MalwareCantFly/Vba2Graph>`__,
+`CAPE <https://github.com/ctxis/CAPE>`__,
+`CinCan <https://cincan.io>`__, `Cuckoo
+Sandbox <https://github.com/cuckoosandbox/cuckoo>`__,
+`DARKSURGEON <https://github.com/cryps1s/DARKSURGEON>`__,
+`Deepviz <https://sandbox.deepviz.com/>`__,
+`DIARIO <https://diario.elevenpaths.com/>`__,
+`dridex.malwareconfig.com <https://dridex.malwareconfig.com>`__, `EML
+Analyzer <https://github.com/ninoseki/eml_analyzer>`__,
+`FAME <https://certsocietegenerale.github.io/fame/>`__,
+`FLARE-VM <https://github.com/fireeye/flare-vm>`__,
+`Hybrid-analysis.com <https://www.hybrid-analysis.com/>`__,
+`IntelOwl <https://github.com/certego/IntelOwl>`__, `Joe
+Sandbox <https://www.document-analyzer.net/>`__, `Laika
+BOSS <https://github.com/lmco/laikaboss>`__,
+`MacroMilter <https://github.com/sbidy/MacroMilter>`__,
+`mailcow <https://mailcow.email/>`__,
+`malshare.io <https://malshare.io>`__,
+`malware-repo <https://github.com/Tigzy/malware-repo>`__, `Malware
+Repository Framework (MRF) <https://www.adlice.com/download/mrf/>`__,
+`MalwareBazaar <https://bazaar.abuse.ch/>`__,
+`olefy <https://github.com/HeinleinSupport/olefy>`__,
+`PeekabooAV <https://github.com/scVENUS/PeekabooAV>`__,
+`pcodedmp <https://github.com/bontchev/pcodedmp>`__,
+`PyCIRCLean <https://github.com/CIRCL/PyCIRCLean>`__,
+`REMnux <https://remnux.org/>`__,
+`Snake <https://github.com/countercept/snake>`__,
+`SNDBOX <https://app.sndbox.com>`__, `Splunk add-on for MS O365
+Email <https://splunkbase.splunk.com/app/5365/>`__,
+`SpuriousEmu <https://github.com/ldbo/SpuriousEmu>`__,
 `Strelka <https://github.com/target/strelka>`__,
 `stoQ <https://stoq.punchcyber.com/>`__,
+`TheHive/Cortex <https://github.com/TheHive-Project/Cortex-Analyzers>`__,
+`TSUGURI Linux <https://tsurugi-linux.org/>`__,
+`Vba2Graph <https://github.com/MalwareCantFly/Vba2Graph>`__,
+`Viper <http://viper.li/>`__,
+`ViperMonkey <https://github.com/decalage2/ViperMonkey>`__,
 `YOMI <https://yomi.yoroi.company>`__, and probably
 `VirusTotal <https://www.virustotal.com>`__. And quite a few `other
 projects on
@@ -226,7 +279,7 @@ This license applies to the python-oletools package, apart from the
 thirdparty folder which contains third-party files published with their
 own license.
 
-The python-oletools package is copyright (c) 2012-2019 Philippe Lagadec
+The python-oletools package is copyright (c) 2012-2021 Philippe Lagadec
 (http://www.decalage.info)
 
 All rights reserved.

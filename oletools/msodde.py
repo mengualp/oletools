@@ -103,7 +103,7 @@ from oletools.common.log_helper import log_helper
 # 2019-07-17 v0.55 CH: - fixed issue #267, unicode error on Python 2
 
 
-__version__ = '0.55.dev3'
+__version__ = '0.55'
 
 # -----------------------------------------------------------------------------
 # TODO: field codes can be in headers/footers/comments - parse these
@@ -779,6 +779,7 @@ def process_csv(filepath):
     else:
         open_arg = dict(newline='')
     with open(filepath, **open_arg) as file_handle:
+        # TODO: here we should not assume this is a file on disk, filepath can be a file object
         results, dialect = process_csv_dialect(file_handle, CSV_DELIMITERS)
         is_small = file_handle.tell() < CSV_SMALL_THRESH
 
@@ -877,6 +878,7 @@ def process_file(filepath, field_filter_mode=None):
             return process_doc(ole)
 
     with open(filepath, 'rb') as file_handle:
+        # TODO: here we should not assume this is a file on disk, filepath can be a file object
         if file_handle.read(4) == RTF_START:
             logger.debug('Process file as rtf')
             return process_rtf(file_handle, field_filter_mode)
@@ -924,6 +926,7 @@ def process_maybe_encrypted(filepath, passwords=None, crypto_nesting=0,
     :param kwargs: same as :py:func:`process_file`
     :returns: same as :py:func:`process_file`
     """
+    # TODO: here filepath may also be a file in memory, it's not necessarily on disk
     result = u''
     try:
         result = process_file(filepath, **kwargs)

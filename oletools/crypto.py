@@ -64,7 +64,7 @@ http://www.decalage.info/python/oletools
 
 # === LICENSE =================================================================
 
-# crypto is copyright (c) 2014-2019 Philippe Lagadec (http://www.decalage.info)
+# crypto is copyright (c) 2014-2021 Philippe Lagadec (http://www.decalage.info)
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -93,8 +93,10 @@ http://www.decalage.info/python/oletools
 # 2019-02-14 v0.01 CH: - first version with encryption check from oleid
 # 2019-04-01 v0.54 PL: - fixed bug in is_encrypted_ole
 # 2019-05-23       PL: - added DEFAULT_PASSWORDS list
+# 2021-05-22 v0.60 PL: - added PowerPoint transparent password
+#                        '/01Hannes Ruescher/01' (issue #627)
 
-__version__ = '0.54.2'
+__version__ = '0.60'
 
 import sys
 import struct
@@ -219,9 +221,12 @@ def is_encrypted(some_file):
             return msoffcrypto.OfficeFile(file_handle).is_encrypted()
 
         except Exception as exc:
-            log.warning('msoffcrypto failed to interpret file {} or determine '
+            # TODO: this triggers unnecessary warnings for non OLE files
+            log.info('msoffcrypto failed to parse file or determine '
                         'whether it is encrypted: {}'
-                        .format(file_handle.name, exc))
+                        .format(exc))
+            # TODO: here we are ignoring some exceptions that should be raised, for example
+            #       "unknown file format" for Excel 5.0/95 files
 
         finally:
             try:
@@ -242,7 +247,8 @@ def is_encrypted(some_file):
         with OleFileIO(some_file) as ole:
             return _is_encrypted_ole(ole)
     except Exception as exc:
-        log.warning('Failed to check {} for encryption ({}); assume it is not '
+        # TODO: this triggers unnecessary warnings for non OLE files
+        log.info('Failed to check {} for encryption ({}); assume it is not '
                     'encrypted.'.format(some_file, exc))
 
     return False
@@ -307,12 +313,20 @@ def _is_encrypted_ole(ole):
     return False
 
 
-#: one way to achieve "write protection" in office files is to encrypt the file
+#: one way to achieve "write protection" in Excel files is to encrypt the file
 #: using this password
-WRITE_PROTECT_ENCRYPTION_PASSWORD = 'VelvetSweatshop'
+# ref: https://docs.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/6b4a08cb-195a-442e-b31c-7c94624a8c29#Appendix_A_25
+# ref: https://twitter.com/BouncyHat/status/1308897568773083138
+EXCEL_TRANSPARENT_PASSWORD = 'VelvetSweatshop'
+
+# PowerPoint password which is transparent for the user:
+# ref: https://docs.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/57fc02f0-c1de-4fc6-908f-d146104662f5
+# ref: https://twitter.com/BouncyHat/status/1308897932389896192
+POWERPOINT_TRANSPARENT_PASSWORD = '/01Hannes Ruescher/01'
 
 #: list of common passwords to be tried by default, used by malware
-DEFAULT_PASSWORDS = [WRITE_PROTECT_ENCRYPTION_PASSWORD, '123', '1234', '12345', '123456', '4321']
+DEFAULT_PASSWORDS = [EXCEL_TRANSPARENT_PASSWORD, POWERPOINT_TRANSPARENT_PASSWORD,
+                     '123', '1234', '12345', '123456', '4321']
 
 
 def _check_msoffcrypto():
