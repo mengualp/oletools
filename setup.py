@@ -55,7 +55,7 @@ import os, fnmatch
 #--- METADATA -----------------------------------------------------------------
 
 name         = "oletools"
-version      = '0.60.1.dev8'
+version      = '0.60.1'
 desc         = "Python tools to analyze security characteristics of MS Office and OLE files (also called Structured Storage, Compound File Binary Format or Compound Document File Format), for Malware Analysis and Incident Response #DFIR"
 long_desc    = open('oletools/README.rst').read()
 author       = "Philippe Lagadec"
@@ -83,6 +83,7 @@ classifiers=[
     "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -331,15 +332,16 @@ def main():
         extras_require={
             # Optional packages - to be installed with pip install -U oletools[full]
             'full': [
+                'XLMMacroDeobfuscator',
+                # Disabled the direct links to GitHub as it's now refused by PyPI:
                 # For XLMMacroDeobfuscator, the release on PyPI is quite old compared
                 # to the github version, so for now we have to install from github:
-                'xlrd2@https://github.com/DissectMalware/xlrd2/archive/master.zip',
-                'pyxlsb2@https://github.com/DissectMalware/pyxlsb2/archive/master.zip',
-                'XLMMacroDeobfuscator@https://github.com/DissectMalware/XLMMacroDeobfuscator/archive/master.zip',
+                # 'xlrd2@https://github.com/DissectMalware/xlrd2/archive/master.zip',
+                # 'pyxlsb2@https://github.com/DissectMalware/pyxlsb2/archive/master.zip',
+                # 'XLMMacroDeobfuscator@https://github.com/DissectMalware/XLMMacroDeobfuscator/archive/master.zip',
                 # References for the syntax:
                 # https://github.com/decalage2/oletools/issues/690
                 # https://stackoverflow.com/questions/30239152/specify-extras-require-with-pip-install-e
-                # 'XLMMacroDeobfuscator',
             ]
         }
     )
