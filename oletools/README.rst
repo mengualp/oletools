@@ -38,6 +38,15 @@ Software.
 News
 ----
 
+-  **2025-05-22 v0.60.3**:
+
+   -  olevba:
+
+      -  fixed a security issue in the CLI display when ANSI escape
+         codes are present (PR #873)
+      -  encrypted files: password is now reported in the logs, added
+         --decrypted_dir option (PR #842)
+
 -  **2024-07-02 v0.60.2**:
 
    -  olevba:
@@ -162,7 +171,7 @@ services, including `ACE <https://github.com/IntegralDefense/ACE>`__,
 `Anlyz.io <https://sandbox.anlyz.io/>`__,
 `AssemblyLine <https://www.cse-cst.gc.ca/en/assemblyline>`__, `Binary
 Refinery <https://github.com/binref/refinery>`__,
-`CAPE <https://github.com/ctxis/CAPE>`__,
+`CAPE <https://github.com/kevoreilly/CAPEv2>`__,
 `CinCan <https://cincan.io>`__, `Cortex XSOAR (Palo
 Alto) <https://cortex.marketplace.pan.dev/marketplace/details/Oletools/>`__,
 `Cuckoo Sandbox <https://github.com/cuckoosandbox/cuckoo>`__,
